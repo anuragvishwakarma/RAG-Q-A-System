@@ -10,3 +10,17 @@ sentence-transformers
 langchain-huggingface
 faiss-cpu
 python-docx
+langchain_ollama
+langchain_openai
+langchain_google_genai
+tf-keras==2.18.0
+transformers
+accelerate
+bitsandbytes
+torch
+
+
+
+
+
+

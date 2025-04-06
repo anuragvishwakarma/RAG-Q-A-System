@@ -1,5 +1,6 @@
 import streamlit as st
 import faiss
+import torch
 import os
 from dotenv import load_dotenv
 from io import BytesIO
@@ -8,15 +9,18 @@ import numpy as np
 from langchain_community.document_loaders import WebBaseLoader
 from PyPDF2 import PdfReader
 from langchain.chains import RetrievalQA
-from langchain.text_splitter import CharacterTextSplitter
+from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_community.vectorstores import FAISS
 from langchain_community.docstore.in_memory import InMemoryDocstore
 from langchain_huggingface import HuggingFaceEndpoint
 
 load_dotenv()
+
+torch.classes.__path__ = []
 #from secret_api_keys import huggingface_api_key  # Set the Hugging Face Hub API token as an environment variable
-huggingface_api_key = st.text_input("Please enter your HUGGINGFACEHUB API Key here: ", value=os.getenv("HUGGINGFACEHUB_API_TOKEN"),type="password")
+#openai_api_key = st.text_input("Please enter your Open AI API Key here: ", value=os.getenv("OPENAI_API_TOKEN"),type="password")
+huggingface_api_key = st.text_input("Please enter your HUGGINGFACEHUB API Key here: ",type="password")
 
 def process_input(input_type, input_data):
     """Processes different input types and returns a vectorstore."""
@@ -27,7 +31,7 @@ def process_input(input_type, input_data):
     elif input_type == "PDF":
         if isinstance(input_data, BytesIO):
             pdf_reader = PdfReader(input_data)
-        elif isinstance(input_data, UploadedFile):
+        elif isinstance(input_data, st.file_uploader.UploadedFile):
             pdf_reader = PdfReader(BytesIO(input_data.read()))
         else:
             raise ValueError("Invalid input data for PDF")
@@ -43,7 +47,7 @@ def process_input(input_type, input_data):
     elif input_type == "DOCX":
         if isinstance(input_data, BytesIO):
             doc = Document(input_data)
-        elif isinstance(input_data, UploadedFile):
+        elif isinstance(input_data, st.uploaded_file_manager.UploadedFile):
             doc = Document(BytesIO(input_data.read()))
         else:
             raise ValueError("Invalid input data for DOCX")
@@ -52,7 +56,7 @@ def process_input(input_type, input_data):
     elif input_type == "TXT":
         if isinstance(input_data, BytesIO):
             text = input_data.read().decode('utf-8')
-        elif isinstance(input_data, UploadedFile):
+        elif isinstance(input_data, st.uploaded_file_manager.UploadedFile):
             text = str(input_data.read().decode('utf-8'))
         else:
             raise ValueError("Invalid input data for TXT")
@@ -60,22 +64,23 @@ def process_input(input_type, input_data):
     else:
         raise ValueError("Unsupported input type")
 
-    text_splitter = CharacterTextSplitter(chunk_size=1000, chunk_overlap=100)
+    text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=100)
     if input_type == "Link":
         texts = text_splitter.split_documents(documents)
         texts = [ str(doc.page_content) for doc in texts ]  # Access page_content from each Document 
     else:
         texts = text_splitter.split_text(documents)
 
-    model_name = "sentence-transformers/all-mpnet-base-v2"
+    model_name = 'sentence-transformers/all-MiniLM-L6-v2'
     model_kwargs = {'device': 'cpu'}
     encode_kwargs = {'normalize_embeddings': False}
+
 
     hf_embeddings = HuggingFaceEmbeddings(
         model_name=model_name,
         model_kwargs=model_kwargs,
-        encode_kwargs=encode_kwargs
-    )
+        encode_kwargs=encode_kwargs)
+
     # Create FAISS index
     sample_embedding = np.array(hf_embeddings.embed_query("sample text"))
     dimension = sample_embedding.shape[0]
@@ -92,8 +97,10 @@ def process_input(input_type, input_data):
 
 def answer_question(vectorstore, query):
     """Answers a question based on the provided vectorstore."""
-    llm = HuggingFaceEndpoint(repo_id= 'meta-llama/Meta-Llama-3-8B-Instruct', 
-                              token = huggingface_api_key, temperature= 0.6)
+    llm = HuggingFaceEndpoint(repo_id= 'google/gemma-3-1b-it', 
+                              token = huggingface_api_key, temperature= 0.6
+                              )
+    
     qa = RetrievalQA.from_chain_type(llm=llm, retriever=vectorstore.as_retriever())
 
     answer = qa({"query": query})
